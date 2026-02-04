@@ -26,7 +26,10 @@ def load_model_from_file(model_path, cuda=True):
     # 3. 智能匹配权重 Key
     if 'embedding_net_state_dict' in checkpoint:
         embedding_net.load_state_dict(checkpoint['embedding_net_state_dict'])
+        # print("成功加载独立特征提取网络权重 (embedding_net_state_dict)")
+
     elif 'model_state_dict' in checkpoint:
+        # print("正在从完整模型中提取特征网络权重...")
         state_dict = checkpoint['model_state_dict']
         new_state_dict = {}
         for k, v in state_dict.items():
@@ -91,17 +94,15 @@ def compute_embeddings_batched(model, dataset, indices, batch_size=32, cuda=True
 
 def evaluate_pair(model_path, test_dataset, class_a_name, class_b_name, cuda=True):
     """
-    通用的成对测试逻辑：
-    1. 计算中心点
-    2. 计算准确率
-    3. [新增] 导出判断错误的图片路径
+    [新增] 通用的成对测试逻辑：
+    计算 class_a 和 class_b 的中心点，然后测试准确率
     """
     # 1. 加载模型
     model = load_model_from_file(model_path, cuda)
 
     print(f"\n--- 开始测试分组: {class_a_name} vs {class_b_name} ---")
 
-    # 2. 获取索引
+    # 2. 获取索引 (使用传入的参数名)
     idx_a = [i for i, label in enumerate(test_dataset.labels)
              if test_dataset.classes[label] == class_a_name]
     idx_b = [i for i, label in enumerate(test_dataset.labels)
@@ -116,22 +117,19 @@ def evaluate_pair(model_path, test_dataset, class_a_name, class_b_name, cuda=Tru
 
     # 3. 划分 Support (参考) / Query (测试)
     def split_indices(indices):
-        # 策略：前 100 张做参考，剩下的做测试 (为了最大化测试集)
-        split_point = 100
-        if len(indices) < 200:
-            split_point = len(indices) // 2
-        return indices[:split_point], indices[split_point:]
+        split = len(indices) // 2
+        return indices[:split], indices[split:]
 
     ref_a_idx, query_a_idx = split_indices(idx_a)
     ref_b_idx, query_b_idx = split_indices(idx_b)
 
-    print(f"正在提取特征 (参考集: {len(ref_a_idx)}/{len(ref_b_idx)}, 测试集: {len(query_a_idx)}/{len(query_b_idx)})...")
+    print("正在分批提取特征...")
 
     # 4. 提取特征
     emb_ref_a = compute_embeddings_batched(model, test_dataset, ref_a_idx, batch_size=32, cuda=cuda)
     emb_ref_b = compute_embeddings_batched(model, test_dataset, ref_b_idx, batch_size=32, cuda=cuda)
 
-    # 计算中心点 (Prototypes)
+    # 计算中心点 (Prototypes) - 都在 CPU 上进行
     prototype_a = emb_ref_a.mean(dim=0)
     prototype_b = emb_ref_b.mean(dim=0)
 
@@ -139,71 +137,31 @@ def evaluate_pair(model_path, test_dataset, class_a_name, class_b_name, cuda=Tru
     emb_query_a = compute_embeddings_batched(model, test_dataset, query_a_idx, batch_size=32, cuda=cuda)
     emb_query_b = compute_embeddings_batched(model, test_dataset, query_b_idx, batch_size=32, cuda=cuda)
 
-    print("特征提取完成，开始计算距离并记录错误...")
+    print("特征提取完成，开始计算距离...")
 
     correct = 0
     total = 0
 
-    # 准备错误日志文件
-    error_log_file = f"error_log_{class_a_name}_vs_{class_b_name}.txt"
+    # --- 预测 Class A ---
+    # 理论上应该离 prototype_a 更近
+    d_a_to_a = torch.sum((emb_query_a - prototype_a) ** 2, dim=1)
+    d_a_to_b = torch.sum((emb_query_a - prototype_b) ** 2, dim=1)
 
-    with open(error_log_file, "w", encoding="utf-8") as f:
-        f.write(f"=== 错误分析报告: {class_a_name} vs {class_b_name} ===\n")
-        f.write(f"说明: 以下图片被模型判断错误 (距离'异类'中心比'同类'中心更近)\n\n")
+    correct += (d_a_to_a < d_a_to_b).sum().item()
+    total += len(emb_query_a)
 
-        # --- [A] 预测 Class A (本来应该是 A) ---
-        d_a_to_a = torch.sum((emb_query_a - prototype_a) ** 2, dim=1)
-        d_a_to_b = torch.sum((emb_query_a - prototype_b) ** 2, dim=1)
+    # --- 预测 Class B ---
+    # 理论上应该离 prototype_b 更近
+    d_b_to_a = torch.sum((emb_query_b - prototype_a) ** 2, dim=1)
+    d_b_to_b = torch.sum((emb_query_b - prototype_b) ** 2, dim=1)
 
-        # 找出错误的索引 (True 表示判错了)
-        mistakes_a_mask = d_a_to_a > d_a_to_b
-        mistakes_a_count = mistakes_a_mask.sum().item()
-
-        correct += (len(emb_query_a) - mistakes_a_count)
-        total += len(emb_query_a)
-
-        if mistakes_a_count > 0:
-            f.write(f"--- [错误类别: {class_a_name}] (被误判为 {class_b_name}) ---\n")
-            # 遍历找出具体的图片路径
-            mistake_indices = mistakes_a_mask.nonzero(as_tuple=False).flatten()
-            for idx in mistake_indices:
-                # idx 是 emb_query_a 中的局部索引
-                # query_a_idx[idx] 是 dataset 中的全局索引
-                dataset_global_idx = query_a_idx[idx.item()]
-                # 获取路径
-                if hasattr(test_dataset, 'img_paths'):
-                    img_path = test_dataset.img_paths[dataset_global_idx]
-                    f.write(f"{img_path}\n")
-                else:
-                    f.write(f"Index: {dataset_global_idx} (Dataset没有img_paths属性)\n")
-
-        # --- [B] 预测 Class B (本来应该是 B) ---
-        d_b_to_a = torch.sum((emb_query_b - prototype_a) ** 2, dim=1)
-        d_b_to_b = torch.sum((emb_query_b - prototype_b) ** 2, dim=1)
-
-        # 找出错误的索引 (True 表示判错了: 离 A 更近了)
-        mistakes_b_mask = d_b_to_b > d_b_to_a
-        mistakes_b_count = mistakes_b_mask.sum().item()
-
-        correct += (len(emb_query_b) - mistakes_b_count)
-        total += len(emb_query_b)
-
-        if mistakes_b_count > 0:
-            f.write(f"\n--- [错误类别: {class_b_name}] (被误判为 {class_a_name}) ---\n")
-            mistake_indices = mistakes_b_mask.nonzero(as_tuple=False).flatten()
-            for idx in mistake_indices:
-                dataset_global_idx = query_b_idx[idx.item()]
-                if hasattr(test_dataset, 'img_paths'):
-                    img_path = test_dataset.img_paths[dataset_global_idx]
-                    f.write(f"{img_path}\n")
-                else:
-                    f.write(f"Index: {dataset_global_idx}\n")
+    correct += (d_b_to_b < d_b_to_a).sum().item()
+    total += len(emb_query_b)
 
     acc = 100. * correct / total
     print(f"测试完成。")
     print(f"测试集大小: {total}")
     print(f"识别准确率 ({class_a_name} vs {class_b_name}): {acc:.2f}%")
-    print(f"错误样本已保存至: {error_log_file}")
     print("---------------------------------------")
 
     return acc
