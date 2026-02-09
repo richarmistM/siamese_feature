@@ -54,9 +54,9 @@ def main():
 
     parser = argparse.ArgumentParser(description='状态标签检测 - Island Split Mode')
     parser.add_argument('--dataset-path', type=str, default=DEFAULT_DATA_PATH, help='数据集路径(strict_island_results)')
-    parser.add_argument('--batch-size', type=int, default=32, help='批量大小')
+    parser.add_argument('--batch-size', type=int, default=64, help='批量大小')
     parser.add_argument('--epochs', type=int, default=50, help='训练轮数')
-    parser.add_argument('--lr', type=float, default=0.0001, help='学习率')
+    parser.add_argument('--lr', type=float, default=0.0002, help='学习率')
     parser.add_argument('--margin', type=float, default=1.0, help='损失函数边距')
     parser.add_argument('--model-type', type=str, choices=['siamese', 'triplet'], default='triplet', help='模型类型')
     parser.add_argument('--cuda', action='store_true', default=torch.cuda.is_available(), help='是否使用GPU')
@@ -124,7 +124,7 @@ def main():
 
             # 使用 Balanced Sampler 保证训练稳定
             train_batch_sampler = BalancedBatchSampler(
-                train_dataset.labels, n_classes=8, n_samples=4
+                train_dataset.labels, n_classes=8, n_samples=8
             )
             train_loader = DataLoader(train_dataset, batch_sampler=train_batch_sampler, num_workers=4)
             val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
