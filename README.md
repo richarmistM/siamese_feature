@@ -97,3 +97,4 @@ python test_text_clustering.py
 ```bash
 python find_similar_images.py
 ```
+![项目截图](Figure_1.png)
