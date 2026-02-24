@@ -28,3 +28,80 @@ project_root/
 └── utils.py                    # 距离矩阵计算与样本挖掘工具
 ```
 
+**环境安装与部署**
+
+1.  安装依赖包：
+
+Bash
+
+pip install -r requirements.txt
+
+_(注：若需使用 GPU 加速，建议根据你的 CUDA 版本前往 PyTorch 官网获取对应的 torch 和 torchvision 安装命令)_
+
+**运行流水线与命令**
+
+项目的完整运行分为四个阶段：数据清洗、岛屿聚类划分、模型训练、泛化测试。
+
+**阶段 1：数据去重 (Data Cleaning)**
+
+清理 datasets/ 目录下的完全重复的图片，防止数据泄露影响评估真实性。
+
+Bash
+
+python hash.py
+
+**阶段 2：数据特征岛屿化与划分 (Data Clustering & Splitting)**
+
+使用预训练模型提取特征，并通过 t-SNE 和 DBSCAN 将外观差异巨大的同类图片划分为不同的“岛屿”，实现极具挑战性的训练/验证集分离。
+
+1.  在 auto_clustering.py 中修改 SOURCE_DIR 指向目标类别。
+2.  运行脚本并根据终端提示交互式选择验证集岛屿：
+
+Bash
+
+python auto_clustering.py
+
+**阶段 3：模型训练 (Model Training)**
+
+主训练脚本，默认使用 OnlineTripletLoss 和难例挖掘。你可以在 main.py 中的 VAL_ISLAND_CONFIG 字典里配置各类别对应的验证集岛屿 ID。
+
+Bash
+
+\# 基础训练命令
+
+python main.py
+
+\# 自定义参数训练
+
+python main.py --batch-size 64 --epochs 50 --lr 0.0002 --margin 1.0 --cuda
+
+_训练完成后，模型权重将自动保存在 saved_models/model_island.pth。_
+
+**阶段 4：模型评估与泛化测试 (Evaluation & Testing)**
+
+**1\. 基础成对测试与 Bad Case 导出** 利用中心点计算两类之间的准确率，并输出误判图片路径：
+
+Bash
+
+python main.py --test-only
+
+**2\. 刀闸状态无监督聚类泛化测试 (核心亮点)** 在不提供任何标签的情况下，测试模型对未参与训练的刀闸开闭状态（isolate_open vs isolate_close）的特征区分能力：
+
+Bash
+
+python test_isolate_clustering.py
+
+**3\. 文本字符聚类测试** 测试模型对相似文本标签（如 open vs close）的字形特征提取能力：
+
+Bash
+
+python test_text_clustering.py
+
+**4\. 图像特征检索 (Image Retrieval)** 给定一张查询图片，在指定的图库类别中寻找最相似的 Top-10 图片并可视化：
+
+1.  打开 find_similar_images.py，修改 QUERY_IMG_PATH 为查询图片路径。
+2.  运行脚本：
+
+Bash
+
+python find_similar_images.py
