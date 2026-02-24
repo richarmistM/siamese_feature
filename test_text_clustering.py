@@ -27,7 +27,7 @@ def main():
     # 1. 加载模型
     print(f"正在加载模型: {MODEL_PATH}")
     if not os.path.exists(MODEL_PATH):
-        print("❌ 错误: 找不到模型文件！")
+        print(" 错误: 找不到模型文件！")
         return
 
     model = EnhancedEmbeddingNet().to(device)
@@ -54,7 +54,7 @@ def main():
     dataset = StatusDataset(DATA_PATH, transform=transform, mode='all', include_only_classes=target_classes)
 
     if len(dataset) == 0:
-        print("❌ 错误: 未找到数据，请检查路径。")
+        print(" 错误: 未找到数据，请检查路径。")
         return
 
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
@@ -113,11 +113,11 @@ def main():
 
     print("-" * 50)
     if final_acc > 0.98:
-        print("✅ 评价: 完美！模型对这两个单词的特征区分非常彻底。")
+        print(" 评价: 完美！模型对这两个单词的特征区分非常彻底。")
     elif final_acc > 0.85:
-        print("👌 评价: 良好。可能有些手写体或模糊图片导致了混淆。")
+        print(" 评价: 良好。可能有些手写体或模糊图片导致了混淆。")
     else:
-        print("⚠️ 评价: 一般。模型可能没太看懂这两个单词的区别。")
+        print(" 评价: 一般。模型可能没太看懂这两个单词的区别。")
 
 
 if __name__ == '__main__':

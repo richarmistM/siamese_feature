@@ -127,7 +127,7 @@ def visualize_results(query_img, results):
 def main():
     if not os.path.exists(QUERY_IMG_PATH):
         print("\n" + "!" * 50)
-        print(f"❌ 错误: 未找到查询图片！")
+        print(f" 错误: 未找到查询图片！")
         print(f"请打开脚本 'find_similar_images.py'")
         print(f"修改第 29 行的 QUERY_IMG_PATH 变量，指向一张真实的图片。")
         print("!" * 50 + "\n")
